@@ -73,7 +73,42 @@ void MyApplication()
 		Mat back_projection, felt_mask;
 		calcBackProject(&hsv, 1, channels, felt_histogram, back_projection, ranges);
 		threshold(back_projection, felt_mask, 20, 255, THRESH_BINARY);
+		morphologyEx(felt_mask, felt_mask, MORPH_OPEN, Mat::ones(5, 5, CV_8U));
 
+		// Convert felt region to a gray value that allows all other balls to be detected.
+		Mat balls_only = pool_image[file_no].clone();
+		balls_only.setTo(Scalar(96, 96, 96), felt_mask);
+		Mat balls_gray;
+		cvtColor(balls_only, balls_gray, COLOR_BGR2GRAY);
+
+		// Hough circles on non perspective image to preserve roundness.
+		// Values chosen described in the document.
+		vector<Vec3f> found_circles;
+		HoughCircles(balls_gray, found_circles, HOUGH_GRADIENT, 1, 22, 130, 14, 18, 27);
+
+		// Save the location of all the found Hough circles.
+		vector<Vec3f> balls;
+		for (size_t i = 0; i < found_circles.size(); i++)
+		{
+			Point2f centre(found_circles[i][0], found_circles[i][1]);
+			balls.push_back(found_circles[i]);
+		}
+
+		// Draw the Balls on screen
+		Mat balls_image = pool_image[file_no].clone();
+		vector<Point2f> image_positions, table_positions;
+		for (size_t i = 0; i < balls.size(); i++)
+		{
+			Point centre(cvRound(balls[i][0]), cvRound(balls[i][1]));
+			circle(balls_image, centre, cvRound(balls[i][2]), Scalar(0, 255, 0), 2);
+			image_positions.push_back(Point2f(balls[i][0], balls[i][1]));
+		}
+		
+		imshow("back projection", back_projection);
+		imshow("felt painted gray", balls_gray);
+		imshow("balls", balls_image);
+
+		// Perform perspective transformation of the table
 		Mat perspective_matrix = getPerspectiveTransform(source_points, destination_points), perspective_warped_image;
 		perspective_warped_image = Mat::zeros(683, 1434, pool_image[file_no].type());
 		warpPerspective(pool_image[file_no], perspective_warped_image, perspective_matrix, perspective_warped_image.size());
