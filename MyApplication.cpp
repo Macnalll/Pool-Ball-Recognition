@@ -91,10 +91,14 @@ void MyApplication()
 		for (size_t i = 0; i < found_circles.size(); i++)
 		{
 			Point2f centre(found_circles[i][0], found_circles[i][1]);
-			balls.push_back(found_circles[i]);
+			double distance_inside = pointPolygonTest(table_outline, centre, true);
+			if (distance_inside >= 8)
+			{
+				balls.push_back(found_circles[i]);
+			}
 		}
 
-		// Draw the Balls on screen
+		// Draw the Balls on screen and save their position on the table
 		Mat balls_image = pool_image[file_no].clone();
 		vector<Point2f> image_positions, table_positions;
 		for (size_t i = 0; i < balls.size(); i++)
@@ -103,6 +107,11 @@ void MyApplication()
 			circle(balls_image, centre, cvRound(balls[i][2]), Scalar(0, 255, 0), 2);
 			image_positions.push_back(Point2f(balls[i][0], balls[i][1]));
 		}
+		perspectiveTransform(image_positions, table_positions, perspective_matrix);
+
+		cout << balls.size() << " balls found" << endl;
+		for (size_t i = 0; i < table_positions.size(); i++)
+			cout << "  ball at x=" << cvRound(table_positions[i].x) << " mm, y=" << cvRound(table_positions[i].y) << " mm" << endl;
 		
 		imshow("back projection", back_projection);
 		imshow("felt painted gray", balls_gray);
@@ -114,7 +123,6 @@ void MyApplication()
 		warpPerspective(pool_image[file_no], perspective_warped_image, perspective_matrix, perspective_warped_image.size());
 
 		imshow(std::string(pool_files[file_no]) + " perspective", perspective_warped_image);
-		imshow("back projection", back_projection);
 
 		char pause = cv::waitKey();  // This introduces a delay between frame.  The length of the delay/number can be reduced.
 	}
