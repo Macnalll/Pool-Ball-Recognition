@@ -1,6 +1,22 @@
 ﻿
 #include "Utilities.h"
 
+// Colour histogram of one ball, using 90 percent of the radius.
+// Normalised so closer and further balls are more comparable.
+Mat BallHistogram(Mat& hsv_image, Vec3f ball)
+{
+	Mat ball_mask = Mat::zeros(hsv_image.size(), CV_8U);
+	circle(ball_mask, Point(cvRound(ball[0]), cvRound(ball[1])), cvRound(ball[2] * 0.9), Scalar(255), FILLED);
+
+	int channels[] = { 0, 1, 2 };
+	int histogram_size[] = { 12, 3, 3 };
+	float hue_range[] = { 0, 180 }, saturation_range[] = { 0, 256 }, value_range[] = { 0, 256 };
+	const float* ranges[] = { hue_range, saturation_range, value_range };
+	Mat histogram;
+	calcHist(&hsv_image, 1, channels, ball_mask, histogram, 3, histogram_size, ranges);
+	normalize(histogram, histogram, 1, 0, NORM_L1);
+	return histogram;
+}
 
 void MyApplication()
 {
@@ -35,6 +51,11 @@ void MyApplication()
 		Point(1888, 451),
 		Point(38, 472)
 	};
+
+	char* ball_names[16] = { "cue", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14", "15" };
+	int training_row[16] = { 293, 252, 251, 255, 256, 254, 262, 256, 253, 329, 330, 335, 336, 334, 345, 342 };
+	int training_column[16] = { 797, 908, 959, 1013, 1072, 1132, 1184, 1244, 1307, 901, 961, 1013, 1067, 1130, 1187, 1245 };
+	Mat ball_templates[16];
 
 	// Load images
 	int number_of_images = sizeof(pool_files) / sizeof(pool_files[0]);
@@ -98,6 +119,52 @@ void MyApplication()
 			}
 		}
 
+		// Match each ball to a location from AllBalls.jpg
+		if (file_no == 0)
+		{
+			vector<Point2f> training_table_points, training_image_points;
+			for (int ball = 0; ball < 16; ball++)
+				training_table_points.push_back(Point2f((float)training_column[ball], (float)training_row[ball]));   // x = column, y = row
+			perspectiveTransform(training_table_points, training_image_points, perspective_matrix.inv());
+		
+			for (int ball = 0; ball < 16; ball++)
+			{
+				int nearest = 0;
+				double nearest_distance = DBL_MAX;
+				for (int i = 0; i < (int)balls.size(); i++)
+				{
+					double distance = norm(Point2f(balls[i][0], balls[i][1]) - training_image_points[ball]);
+					if (distance < nearest_distance) { nearest_distance = distance; nearest = i; }
+				}
+				ball_templates[ball] = BallHistogram(hsv, balls[nearest]);
+			}
+		}
+
+		// Create a histogram for each ball
+		// Back propagate against all learnt balls using Bhattacharryya
+		vector<Vec3f> matches;
+		for (int i = 0; i < (int)balls.size(); i++)
+		{
+			Mat histogram = BallHistogram(hsv, balls[i]);
+			for (int ball = 0; ball < 16; ball++)
+				matches.push_back(Vec3f((float)compareHist(histogram, ball_templates[ball], HISTCMP_BHATTACHARYYA),
+					(float)i, (float)ball));
+		}
+
+		// Sort each histogram match and join a ball to the most identical histogram
+		sort(matches.begin(), matches.end(), [](const Vec3f& a, const Vec3f& b) { return a[0] < b[0]; });
+		vector<int> label(balls.size(), -1);
+		vector<bool> number_used(16, false);
+		for (size_t m = 0; m < matches.size(); m++)
+		{
+			int i = (int)matches[m][1], ball = (int)matches[m][2];
+			if (label[i] == -1 && !number_used[ball])
+			{
+				label[i] = ball;
+				number_used[ball] = true;
+			}
+		}
+
 		// Draw the Balls on screen and save their position on the table
 		Mat balls_image = pool_image[file_no].clone();
 		vector<Point2f> image_positions, table_positions;
@@ -111,7 +178,8 @@ void MyApplication()
 
 		cout << balls.size() << " balls found" << endl;
 		for (size_t i = 0; i < table_positions.size(); i++)
-			cout << "  ball at x=" << cvRound(table_positions[i].x) << " mm, y=" << cvRound(table_positions[i].y) << " mm" << endl;
+		cout << "  ball " << ((label[i] >= 0) ? ball_names[label[i]] : "?")
+			<< " at row=" << cvRound(table_positions[i].y) << " mm, column=" << cvRound(table_positions[i].x) << " mm" << endl;
 		
 		imshow("back projection", back_projection);
 		imshow("felt painted gray", balls_gray);
