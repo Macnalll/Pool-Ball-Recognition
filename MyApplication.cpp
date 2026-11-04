@@ -47,7 +47,7 @@ Mat FeltRegion(Mat& warped, Mat& edges_image)
 
 // find the balls in a perspective image
 // use SQUASH to make the balls round
-vector<Vec3f> DetectBalls(Mat& warped, Mat& felt, Mat& balls_gray)
+vector<Vec3f> DetectBalls(Mat& warped, Mat& felt, Mat& balls_gray, Mat& squashed)
 {
 	// paint the felt gray
 	Mat balls_only = warped.clone();
@@ -55,7 +55,7 @@ vector<Vec3f> DetectBalls(Mat& warped, Mat& felt, Mat& balls_gray)
 	cvtColor(balls_only, balls_gray, COLOR_BGR2GRAY);
 
 	// minDist 28, Canny 130, accumulator 13, radius 17-26.
-	Mat squashed;
+	//Mat squashed;
 	resize(balls_gray, squashed, Size(TABLE_WIDTH, cvRound(TABLE_HEIGHT * SQUASH)), 0, 0, INTER_AREA);
 	vector<Vec3f> found_circles, balls;
 	HoughCircles(squashed, found_circles, HOUGH_GRADIENT, 1, 28, 130, 13, 17, 26);
@@ -139,7 +139,7 @@ void MyApplication()
 	Mat training_felt = FeltRegion(training_warped, dummy);
 	Mat training_hsv, training_gray;
 	cvtColor(training_warped, training_hsv, COLOR_BGR2HSV);
-	vector<Vec3f> training_circles = DetectBalls(training_warped, training_felt, training_gray);
+	vector<Vec3f> training_circles = DetectBalls(training_warped, training_felt, training_gray, dummy);
 
 	Mat ball_templates[BALL_COUNT];
 	for (int ball = 0; ball < BALL_COUNT; ball++)
@@ -180,9 +180,9 @@ void MyApplication()
 		Mat edges;
 		warpPerspective(pool_image[file_no], warped, perspective_matrix, Size(TABLE_WIDTH, TABLE_HEIGHT), INTER_CUBIC);
 		Mat felt = FeltRegion(warped, edges);
-		Mat hsv, balls_gray;
+		Mat hsv, balls_gray, squashed;
 		cvtColor(warped, hsv, COLOR_BGR2HSV);
-		vector<Vec3f> balls = DetectBalls(warped, felt, balls_gray);
+		vector<Vec3f> balls = DetectBalls(warped, felt, balls_gray, squashed);
 
 		// create a histogram for each ball
 		// compare each histogram against base values using Bhattacharryya
@@ -247,7 +247,7 @@ void MyApplication()
 			total_tp += tp; total_fp += fp; total_fn += fn; total_correct += correct;
 		}
 
-		// draw on the warped table (which is only the designated table area).  Pixels are mm.
+		// draw on the warped table
 		Mat balls_image = warped.clone();
 		cout << balls.size() << " balls found" << endl;
 		for (size_t i = 0; i < balls.size(); i++)
@@ -262,6 +262,7 @@ void MyApplication()
 			cout << "  ball " << name << " at row=" << centre.y << " mm, column=" << centre.x << " mm" << endl;
 		}
 
+		imshow("squashed", squashed);
 		imshow("canny", edges);
 		imshow("perspective", warped);
 		imshow("felt (largest region)", felt);
